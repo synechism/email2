@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { emailMessage, emailThread, nylasGrant, scrapeRun } from "@/db/schema";
+import { getEmailQueueCountsSafe } from "@/lib/queues/email";
 
 export async function getDashboardData(organizationId: string) {
   const [threadCount] = await db
@@ -82,6 +83,7 @@ export async function getDashboardData(organizationId: string) {
     .where(eq(emailThread.organizationId, organizationId))
     .orderBy(desc(emailThread.latestMessageAt))
     .limit(12);
+  const queueCounts = await getEmailQueueCountsSafe();
 
   return {
     counts: {
@@ -91,5 +93,6 @@ export async function getDashboardData(organizationId: string) {
     kindCounts,
     grants: grantsWithRuns,
     recentThreads,
+    queueCounts,
   };
 }

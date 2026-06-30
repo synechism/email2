@@ -211,6 +211,12 @@ input[readonly] {
   border: 1px solid var(--line);
 }
 
+.icon-button.danger {
+  color: var(--red);
+  background: rgba(181, 55, 55, 0.06);
+  border-color: rgba(181, 55, 55, 0.24);
+}
+
 .primary-button:hover,
 .secondary-button:hover,
 .icon-button:hover {
@@ -285,7 +291,7 @@ button:disabled {
 
 .metric-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -366,12 +372,43 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 0 16px;
   border-bottom: 1px solid var(--line);
 }
 
+.queue-pills {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.queue-pill {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #f1f4ee;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.queue-pill.failed {
+  background: rgba(181, 55, 55, 0.1);
+  color: var(--red);
+}
+
 .compact-form {
   padding: 16px;
+}
+
+.compact-form.split-form {
+  border-top: 1px solid var(--line);
 }
 
 .grant-list,
@@ -426,6 +463,12 @@ button:disabled {
 
 .grant-main {
   min-width: 0;
+}
+
+.grant-actions {
+  display: grid;
+  align-content: start;
+  gap: 8px;
 }
 
 .grant-title,
@@ -576,8 +619,12 @@ button:disabled {
     grid-template-columns: 7px minmax(0, 1fr);
   }
 
-  .grant-row > .icon-button {
+  .grant-actions {
     grid-column: 2;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .grant-actions > .icon-button {
     width: 100%;
   }
 

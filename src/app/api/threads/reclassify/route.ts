@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getRequestOrgContext } from "@/lib/auth-server";
-import { reclassifyOrganizationThreads } from "@/lib/nylas/scraper";
+import { enqueueOrganizationClassificationJobs } from "@/lib/queues/email";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,7 @@ export async function POST() {
   }
 
   try {
-    return NextResponse.json(await reclassifyOrganizationThreads(context.org.id));
+    return NextResponse.json(await enqueueOrganizationClassificationJobs(context.org.id));
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to reclassify threads." },

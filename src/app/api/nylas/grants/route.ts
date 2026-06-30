@@ -6,7 +6,7 @@ import { createId } from "@/db/ids";
 import { nylasGrant } from "@/db/schema";
 import { getRequestOrgContext } from "@/lib/auth-server";
 import { getGrantProfile } from "@/lib/nylas/http";
-import { runNylasScrape } from "@/lib/nylas/scraper";
+import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
 
 export const runtime = "nodejs";
 
@@ -64,9 +64,9 @@ export async function POST(request: NextRequest) {
       })
       .returning({ id: nylasGrant.id });
 
-    const scrape = grant ? await runNylasScrape(grant.id) : null;
+    const job = grant ? await enqueueEmailDiscoveryJob({ provider: "nylas", id: grant.id }) : null;
 
-    return NextResponse.json({ grant, scrape });
+    return NextResponse.json({ grant, jobId: job?.id ?? null });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to add grant." }, { status: 500 });
   }

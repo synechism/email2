@@ -21,15 +21,17 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
   }
 
   const data = JSON.parse(JSON.stringify(await getDashboardData(org.id)));
-  const connected = params.connected === "nylas";
+  const connected = typeof params.connected === "string" ? params.connected : null;
   const error = typeof params.error === "string" ? params.error : null;
+  const flash = connected === "nylas" ? "Nylas grant connected. Scrape queued in the background." : null;
 
   return (
     <Dashboard
       initialData={data}
       organization={org}
       user={{ name: session.user.name, email: session.user.email }}
-      flash={connected ? "Nylas grant connected. First scrape batch finished." : error}
+      flash={flash}
+      initialError={error}
     />
   );
 }

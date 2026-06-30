@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { nylasGrant } from "@/db/schema";
 import { getRequestOrgContext } from "@/lib/auth-server";
-import { runNylasScrape } from "@/lib/nylas/scraper";
+import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
 
 export const runtime = "nodejs";
 
@@ -26,11 +26,7 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: "Grant not found." }, { status: 404 });
   }
 
-  const scrape = await runNylasScrape(grant.id);
+  const job = await enqueueEmailDiscoveryJob({ provider: "nylas", id: grant.id });
 
-  if (scrape.status === "failed") {
-    return NextResponse.json({ scrape }, { status: 500 });
-  }
-
-  return NextResponse.json({ scrape });
+  return NextResponse.json({ queued: true, jobId: job.id });
 }

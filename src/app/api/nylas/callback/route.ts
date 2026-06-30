@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { createId } from "@/db/ids";
 import { nylasGrant, nylasOAuthState } from "@/db/schema";
 import { exchangeCodeForGrant } from "@/lib/nylas/http";
-import { runNylasScrape } from "@/lib/nylas/scraper";
+import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
 
 export const runtime = "nodejs";
 
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       .returning({ id: nylasGrant.id });
 
     if (grant) {
-      await runNylasScrape(grant.id);
+      await enqueueEmailDiscoveryJob({ provider: "nylas", id: grant.id });
     }
 
     redirectUrl.searchParams.set("connected", "nylas");

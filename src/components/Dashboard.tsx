@@ -12,6 +12,7 @@ import {
   Mail,
   Play,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 
 import { authClient } from "@/lib/auth-client";
@@ -22,6 +23,11 @@ type DashboardData = {
     emails: number;
   };
   kindCounts: Array<{ kind: string; count: number }>;
+  queueCounts: {
+    discovery: QueueCountSet;
+    classification: QueueCountSet;
+    unavailable?: boolean;
+  };
   grants: Array<{
     id: string;
     grantId: string;
@@ -57,16 +63,25 @@ type DashboardData = {
   }>;
 };
 
+type QueueCountSet = {
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+};
+
 export function Dashboard({
   initialData,
   organization,
   user,
   flash,
+  initialError,
 }: {
   initialData: DashboardData;
   organization: { id: string; name: string; slug: string; role: string };
   user: { name: string; email: string };
   flash?: string | null;
+  initialError?: string | null;
 }) {
   const router = useRouter();
   const [data, setData] = useState(initialData);
@@ -74,12 +89,21 @@ export function Dashboard({
   const [grantEmail, setGrantEmail] = useState("");
   const [manualPending, setManualPending] = useState(false);
   const [reclassifyPending, setReclassifyPending] = useState(false);
+  const [deletingGrantId, setDeletingGrantId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const running = data.grants.some((grant) => grant.scrapeStatus === "running");
+  const [error, setError] = useState<string | null>(initialError ?? null);
+  const queueBusy = queueTotal(data.queueCounts) > 0;
+  const running =
+    queueBusy ||
+    data.grants.some((grant) => ["queued", "running"].includes(grant.scrapeStatus)) ||
+    data.kindCounts.some((item) => item.kind === "uncategorized" && Number(item.count) > 0);
 
   const kindTotal = useMemo(
-    () => data.kindCounts.reduce((total, item) => total + Number(item.count), 0),
+    () =>
+      data.kindCounts.reduce(
+        (total, item) => (item.kind === "uncategorized" ? total : total + Number(item.count)),
+        0,
+      ),
     [data.kindCounts],
   );
 
@@ -132,7 +156,7 @@ export function Dashboard({
     setError(null);
     setData((current) => ({
       ...current,
-      grants: current.grants.map((grant) => (grant.id === id ? { ...grant, scrapeStatus: "running" } : grant)),
+      grants: current.grants.map((grant) => (grant.id === id ? { ...grant, scrapeStatus: "queued" } : grant)),
     }));
 
     try {
@@ -166,6 +190,47 @@ export function Dashboard({
       setError(caught instanceof Error ? caught.message : "Unable to rejudge threads.");
     } finally {
       setReclassifyPending(false);
+    }
+  }
+
+  async function deleteMailbox(grant: DashboardData["grants"][number]) {
+    const label = grant.email ?? grant.grantId;
+    const confirmed = window.confirm(
+      `Delete ${label} and all locally scraped emails, threads, judgments, and scrape runs for this account? This only deletes local database data.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+    setDeletingGrantId(grant.id);
+
+    try {
+      const response = await fetch(`/api/nylas/grants/${grant.id}`, { method: "DELETE" });
+      const payload = (await response.json()) as {
+        error?: string;
+        messagesDeleted?: number;
+        threadsDeleted?: number;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to delete account.");
+      }
+
+      setData((current) => ({
+        ...current,
+        counts: {
+          emails: Math.max(0, current.counts.emails - (payload.messagesDeleted ?? 0)),
+          threads: Math.max(0, current.counts.threads - (payload.threadsDeleted ?? 0)),
+        },
+        grants: current.grants.filter((item) => item.id !== grant.id),
+      }));
+      await refreshDashboard();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete account.");
+    } finally {
+      setDeletingGrantId(null);
     }
   }
 
@@ -212,6 +277,7 @@ export function Dashboard({
         <Metric icon={<Mail size={18} />} label="Emails" value={data.counts.emails} />
         <Metric icon={<Database size={18} />} label="Threads" value={data.counts.threads} />
         <Metric icon={<CheckCircle2 size={18} />} label="Judged" value={kindTotal} />
+        <Metric icon={<RefreshCw size={18} />} label="Jobs" value={queueTotal(data.queueCounts)} />
       </section>
 
       <section className="connect-band">
@@ -222,7 +288,7 @@ export function Dashboard({
         <div className="connect-actions">
           <button className="secondary-button" type="button" onClick={reclassifyThreads} disabled={reclassifyPending}>
             <RefreshCw size={16} />
-            {reclassifyPending ? "Rejudging" : "Rejudge all"}
+            {reclassifyPending ? "Queueing" : "Rejudge all"}
           </button>
           <a className="primary-button" href="/api/nylas/connect">
             <LinkIcon size={16} />
@@ -247,7 +313,7 @@ export function Dashboard({
             </label>
             <button className="secondary-button" type="submit" disabled={manualPending}>
               <Play size={15} />
-              {manualPending ? "Scraping" : "Add and scrape"}
+              {manualPending ? "Queueing" : "Add and queue"}
             </button>
           </form>
         </section>
@@ -255,6 +321,7 @@ export function Dashboard({
         <section className="panel grants-panel">
           <div className="panel-heading">
             <h2>Scrape runs</h2>
+            <QueueSummary counts={data.queueCounts} />
           </div>
           <div className="grant-list">
             {data.grants.length === 0 ? (
@@ -288,15 +355,26 @@ export function Dashboard({
                       </p>
                     ) : null}
                   </div>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={() => runScrape(grant.id)}
-                    disabled={grant.scrapeStatus === "running"}
-                    title="Run scrape batch"
-                  >
-                    <Play size={16} />
-                  </button>
+                  <div className="grant-actions">
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => runScrape(grant.id)}
+                      disabled={["queued", "running"].includes(grant.scrapeStatus) || deletingGrantId === grant.id}
+                      title="Run scrape batch"
+                    >
+                      <Play size={16} />
+                    </button>
+                    <button
+                      className="icon-button danger"
+                      type="button"
+                      onClick={() => deleteMailbox(grant)}
+                      disabled={["queued", "running"].includes(grant.scrapeStatus) || deletingGrantId === grant.id}
+                      title="Delete local account data"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </article>
               ))
             )}
@@ -366,10 +444,47 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
   );
 }
 
+function QueueSummary({
+  counts,
+}: {
+  counts: {
+    discovery: QueueCountSet;
+    classification: QueueCountSet;
+    unavailable?: boolean;
+  };
+}) {
+  if (counts.unavailable) {
+    return <span className="queue-pill failed">Redis offline</span>;
+  }
+
+  const discoveryActive = counts.discovery.waiting + counts.discovery.active + counts.discovery.delayed;
+  const classificationActive = counts.classification.waiting + counts.classification.active + counts.classification.delayed;
+  const failed = counts.discovery.failed + counts.classification.failed;
+
+  return (
+    <div className="queue-pills">
+      <span className="queue-pill">Discovery {discoveryActive}</span>
+      <span className="queue-pill">Classify {classificationActive}</span>
+      {failed ? <span className="queue-pill failed">Failed {failed}</span> : null}
+    </div>
+  );
+}
+
+function queueTotal(counts: DashboardData["queueCounts"]) {
+  return (
+    counts.discovery.waiting +
+    counts.discovery.active +
+    counts.discovery.delayed +
+    counts.classification.waiting +
+    counts.classification.active +
+    counts.classification.delayed
+  );
+}
+
 function statusTone(status: string) {
   if (status === "completed") return "complete";
   if (status === "failed") return "failed";
-  if (status === "running") return "running";
+  if (status === "running" || status === "queued") return "running";
   return "idle";
 }
 
