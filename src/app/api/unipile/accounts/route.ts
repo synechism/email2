@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getRequestOrgContext } from "@/lib/auth-server";
-import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
+import { enqueueMailboxDiscovery } from "@/lib/email/service";
 import { upsertUnipileAccount } from "@/lib/unipile/scraper";
 
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       organizationId: context.org.id,
       connectedByUserId: context.session.user.id,
     });
-    const job = account ? await enqueueEmailDiscoveryJob({ provider: "unipile", id: account.id }) : null;
+    const job = account ? await enqueueMailboxDiscovery({ mailboxId: account.id, organizationId: context.org.id }) : null;
 
     return NextResponse.json({ account, jobId: job?.id ?? null });
   } catch (error) {

@@ -1,43 +1,41 @@
 import { Worker } from "bullmq";
-import { and, eq } from "drizzle-orm";
 
-import { db } from "@/db/client";
-import { emailThread } from "@/db/schema";
+import {
+  enqueueMailboxDiscovery,
+  getMailboxDiscoveryPageBudget,
+  getMailboxPendingThreadIds,
+  runMailboxScrape,
+} from "@/lib/email/service";
 import { classifyTouchedThreads, refreshThreadRollups } from "@/lib/email/threads";
 import { env } from "@/lib/env";
 import {
   EMAIL_CLASSIFICATION_QUEUE,
   EMAIL_DISCOVERY_QUEUE,
-  enqueueEmailDiscoveryJob,
   enqueueThreadClassificationJobs,
   redisConnectionOptions,
   type EmailClassificationJobData,
   type EmailDiscoveryJobData,
 } from "@/lib/queues/email";
-import { runNylasScrape } from "@/lib/nylas/scraper";
-import { runUnipileScrape } from "@/lib/unipile/scraper";
 
 export function startEmailWorkers() {
   const discoveryWorker = new Worker<EmailDiscoveryJobData>(
     EMAIL_DISCOVERY_QUEUE,
     async (job) => {
-      const maxPages = discoveryJobPageLimit(job.data);
-      const result =
-        job.data.provider === "nylas"
-          ? await runNylasScrape(job.data.id, { maxPages })
-          : await runUnipileScrape(job.data.id, { maxPages });
+      const maxPages = await discoveryJobPageLimit(job.data);
+      const result = await runMailboxScrape(job.data.mailboxId, { maxPages });
 
       if (result.status !== "failed") {
-        const pagesRemaining = Math.max(0, (job.data.pagesRemaining ?? providerPageBudget(job.data.provider)) - result.pagesProcessed);
+        const pageBudget = job.data.pagesRemaining ?? (await getMailboxDiscoveryPageBudget(job.data.mailboxId));
+        const pagesRemaining = Math.max(0, pageBudget - result.pagesProcessed);
         const shouldContinue = Boolean(result.nextCursor && pagesRemaining > 0);
-        const pendingThreadIds = shouldContinue ? [] : await getPendingThreadIds(job.data);
+        const pendingThreadIds = shouldContinue ? [] : await getMailboxPendingThreadIds(job.data.mailboxId);
         const threadIds = [...new Set([...result.touchedThreadIds, ...pendingThreadIds])];
 
         await enqueueThreadClassificationJobs(result.organizationId, threadIds);
 
         if (shouldContinue) {
-          await enqueueEmailDiscoveryJob({
-            ...job.data,
+          await enqueueMailboxDiscovery({
+            mailboxId: job.data.mailboxId,
             pagesRemaining,
           });
         }
@@ -99,15 +97,11 @@ export function startEmailWorkers() {
   return [discoveryWorker, classificationWorker];
 }
 
-function discoveryJobPageLimit(jobData: EmailDiscoveryJobData) {
+async function discoveryJobPageLimit(jobData: EmailDiscoveryJobData) {
   return Math.min(
     env.EMAIL_DISCOVERY_JOB_PAGE_BATCH_SIZE,
-    jobData.pagesRemaining ?? providerPageBudget(jobData.provider),
+    jobData.pagesRemaining ?? (await getMailboxDiscoveryPageBudget(jobData.mailboxId)),
   );
-}
-
-function providerPageBudget(provider: EmailDiscoveryJobData["provider"]) {
-  return provider === "nylas" ? env.NYLAS_SCRAPE_MAX_PAGES_PER_RUN : env.UNIPILE_SCRAPE_MAX_PAGES_PER_RUN;
 }
 
 function getClassificationThreadIds(jobData: EmailClassificationJobData) {
@@ -116,17 +110,4 @@ function getClassificationThreadIds(jobData: EmailClassificationJobData) {
   }
 
   return jobData.threadId ? [jobData.threadId] : [];
-}
-
-async function getPendingThreadIds(jobData: EmailDiscoveryJobData) {
-  const rows = await db
-    .select({ id: emailThread.id })
-    .from(emailThread)
-    .where(
-      jobData.provider === "nylas"
-        ? and(eq(emailThread.nylasGrantId, jobData.id), eq(emailThread.kind, "uncategorized"))
-        : and(eq(emailThread.unipileAccountId, jobData.id), eq(emailThread.kind, "uncategorized")),
-    );
-
-  return rows.map((row) => row.id);
 }

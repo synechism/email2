@@ -155,7 +155,7 @@ export function Dashboard({
     }
   }
 
-  async function runScrape(id: string, source: "nylas" | "unipile") {
+  async function runScrape(id: string) {
     setError(null);
     setData((current) => ({
       ...current,
@@ -163,8 +163,7 @@ export function Dashboard({
     }));
 
     try {
-      const path = source === "nylas" ? `/api/nylas/grants/${id}/scrape` : `/api/unipile/accounts/${id}/scrape`;
-      const response = await fetch(path, { method: "POST" });
+      const response = await fetch(`/api/mailboxes/${id}/scrape`, { method: "POST" });
       const payload = (await response.json()) as { error?: string };
 
       if (!response.ok) {
@@ -237,9 +236,7 @@ export function Dashboard({
     setDeletingGrantId(grant.id);
 
     try {
-      const path =
-        grant.source === "nylas" ? `/api/nylas/grants/${grant.id}` : `/api/unipile/accounts/${grant.id}`;
-      const response = await fetch(path, { method: "DELETE" });
+      const response = await fetch(`/api/mailboxes/${grant.id}`, { method: "DELETE" });
       const payload = (await response.json()) as {
         error?: string;
         messagesDeleted?: number;
@@ -284,7 +281,7 @@ export function Dashboard({
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Nylas v3 mailbox scraper</p>
+          <p className="eyebrow">Mailbox scraper</p>
           <h1>{organization.name}</h1>
         </div>
         <div className="topbar-actions">
@@ -336,7 +333,7 @@ export function Dashboard({
       <div className="work-grid">
         <section className="panel">
           <div className="panel-heading">
-            <h2>Manual grant</h2>
+            <h2>Manual Nylas grant</h2>
           </div>
           <form className="compact-form" onSubmit={addManualGrant}>
             <label>
@@ -407,7 +404,7 @@ export function Dashboard({
                     <button
                       className="icon-button"
                       type="button"
-                      onClick={() => runScrape(grant.id, grant.source)}
+                      onClick={() => runScrape(grant.id)}
                       disabled={["queued", "running"].includes(grant.scrapeStatus) || deletingGrantId === grant.id}
                       title="Run scrape batch"
                     >

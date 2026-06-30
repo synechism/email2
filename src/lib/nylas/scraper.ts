@@ -4,24 +4,10 @@ import { db } from "@/db/client";
 import { createId } from "@/db/ids";
 import { emailMessage, emailThread, nylasGrant, scrapeRun } from "@/db/schema";
 import { classifyTouchedThreads, refreshThreadRollups } from "@/lib/email/threads";
+import type { EmailName, MailboxScrapeOptions, MailboxScrapeResult } from "@/lib/email/types";
 import { env } from "@/lib/env";
 import { listGrantMessages } from "@/lib/nylas/http";
-import type { EmailName, NylasSelectedMessage } from "@/lib/nylas/types";
-
-type ScrapeResult = {
-  runId: string;
-  organizationId: string;
-  status: "completed" | "partial" | "failed";
-  pagesProcessed: number;
-  messagesUpserted: number;
-  threadsTouched: number;
-  touchedThreadIds: string[];
-  nextCursor: string | null;
-};
-
-type ScrapeOptions = {
-  maxPages?: number;
-};
+import type { NylasSelectedMessage } from "@/lib/nylas/types";
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,7 +68,10 @@ function mergeParticipants(message: NylasSelectedMessage) {
   });
 }
 
-export async function runNylasScrape(nylasGrantDbId: string, options: ScrapeOptions = {}): Promise<ScrapeResult> {
+export async function runNylasScrape(
+  nylasGrantDbId: string,
+  options: MailboxScrapeOptions = {},
+): Promise<MailboxScrapeResult> {
   const [grant] = await db.select().from(nylasGrant).where(eq(nylasGrant.id, nylasGrantDbId)).limit(1);
 
   if (!grant) {

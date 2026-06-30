@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { db } from "@/db/client";
 import { unipileHostedAuthState } from "@/db/schema";
-import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
+import { enqueueMailboxDiscovery } from "@/lib/email/service";
 import { upsertUnipileAccount } from "@/lib/unipile/scraper";
 
 export const runtime = "nodejs";
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     })
     .where(eq(unipileHostedAuthState.id, stateRow.id));
 
-  const job = account ? await enqueueEmailDiscoveryJob({ provider: "unipile", id: account.id }) : null;
+  const job = account ? await enqueueMailboxDiscovery({ mailboxId: account.id, organizationId: stateRow.organizationId }) : null;
 
   return NextResponse.json({ ok: true, account, jobId: job?.id ?? null });
 }

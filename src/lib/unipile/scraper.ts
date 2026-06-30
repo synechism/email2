@@ -4,30 +4,16 @@ import { db } from "@/db/client";
 import { createId } from "@/db/ids";
 import { emailMessage, emailThread, scrapeRun, unipileAccount } from "@/db/schema";
 import { refreshThreadRollups } from "@/lib/email/threads";
+import type { EmailName, MailboxScrapeOptions, MailboxScrapeResult } from "@/lib/email/types";
 import { env } from "@/lib/env";
 import { getUnipileAccount, listUnipileEmails } from "@/lib/unipile/http";
 import type { UnipileAccountProfile, UnipileAttendee, UnipileEmail } from "@/lib/unipile/types";
-
-type ScrapeResult = {
-  runId: string;
-  organizationId: string;
-  status: "completed" | "partial" | "failed";
-  pagesProcessed: number;
-  messagesUpserted: number;
-  threadsTouched: number;
-  touchedThreadIds: string[];
-  nextCursor: string | null;
-};
-
-type ScrapeOptions = {
-  maxPages?: number;
-};
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function asEmailList(value: unknown): Array<{ name?: string; email?: string }> {
+function asEmailList(value: unknown): EmailName[] {
   const attendees = Array.isArray(value) ? value : value ? [value] : [];
 
   return attendees
@@ -131,7 +117,10 @@ export async function upsertUnipileAccount({
   return account;
 }
 
-export async function runUnipileScrape(unipileAccountDbId: string, options: ScrapeOptions = {}): Promise<ScrapeResult> {
+export async function runUnipileScrape(
+  unipileAccountDbId: string,
+  options: MailboxScrapeOptions = {},
+): Promise<MailboxScrapeResult> {
   const [account] = await db.select().from(unipileAccount).where(eq(unipileAccount.id, unipileAccountDbId)).limit(1);
 
   if (!account) {

@@ -3,8 +3,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { createId } from "@/db/ids";
 import { emailMessage, emailThread, threadJudgment } from "@/db/schema";
-import { classifyThreads, type ClassificationInput } from "@/lib/nylas/classifier";
-import type { EmailName } from "@/lib/nylas/types";
+import { classifyThreads, type ClassificationInput } from "@/lib/email/classifier";
+import type { EmailName } from "@/lib/email/types";
 
 export async function refreshThreadRollups(threadIds: string[]) {
   if (threadIds.length === 0) {

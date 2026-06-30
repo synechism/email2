@@ -4,8 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { createId } from "@/db/ids";
 import { nylasGrant, nylasOAuthState } from "@/db/schema";
+import { enqueueMailboxDiscovery } from "@/lib/email/service";
 import { exchangeCodeForGrant } from "@/lib/nylas/http";
-import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
 
 export const runtime = "nodejs";
 
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       .returning({ id: nylasGrant.id });
 
     if (grant) {
-      await enqueueEmailDiscoveryJob({ provider: "nylas", id: grant.id });
+      await enqueueMailboxDiscovery({ mailboxId: grant.id, organizationId: stateRow.organizationId });
     }
 
     redirectUrl.searchParams.set("connected", "nylas");

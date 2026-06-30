@@ -1,7 +1,6 @@
-export type EmailName = {
-  name?: string;
-  email?: string;
-};
+import type { EmailName } from "@/lib/email/types";
+
+export type { EmailName };
 
 export type NylasSelectedMessage = {
   id?: string;

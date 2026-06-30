@@ -13,14 +13,18 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
   }
 
   const { id } = await context.params;
+
   try {
     const job = await enqueueMailboxDiscovery({ mailboxId: id, organizationId: requestContext.org.id });
     return NextResponse.json({ queued: true, jobId: job.id });
   } catch (error) {
     if (error instanceof MailboxNotFoundError) {
-      return NextResponse.json({ error: "Grant not found." }, { status: 404 });
+      return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
     }
 
-    throw error;
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to queue mailbox discovery." },
+      { status: 500 },
+    );
   }
 }

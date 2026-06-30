@@ -1,5 +1,5 @@
 import { env } from "@/lib/env";
-import type { EmailName } from "@/lib/nylas/types";
+import type { EmailName } from "@/lib/email/types";
 
 export type ThreadClassification = {
   threadId?: string;

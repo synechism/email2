@@ -2,23 +2,16 @@ import { Job, Queue } from "bullmq";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { emailThread, nylasGrant, unipileAccount } from "@/db/schema";
+import { emailThread } from "@/db/schema";
 import { env } from "@/lib/env";
 
 export const EMAIL_DISCOVERY_QUEUE = "email-discovery";
 export const EMAIL_CLASSIFICATION_QUEUE = "email-classification";
 
-export type EmailDiscoveryJobData =
-  | {
-      provider: "nylas";
-      id: string;
-      pagesRemaining?: number;
-    }
-  | {
-      provider: "unipile";
-      id: string;
-      pagesRemaining?: number;
-    };
+export type EmailDiscoveryJobData = {
+  mailboxId: string;
+  pagesRemaining?: number;
+};
 
 export type EmailClassificationJobData = {
   organizationId: string;
@@ -69,32 +62,7 @@ export function getEmailClassificationQueue() {
 }
 
 export async function enqueueEmailDiscoveryJob(data: EmailDiscoveryJobData) {
-  const jobData = {
-    ...data,
-    pagesRemaining: data.pagesRemaining ?? defaultDiscoveryPageBudget(data.provider),
-  };
-
-  if (data.provider === "nylas") {
-    await db
-      .update(nylasGrant)
-      .set({
-        scrapeStatus: "queued",
-        lastError: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(nylasGrant.id, data.id));
-  } else {
-    await db
-      .update(unipileAccount)
-      .set({
-        scrapeStatus: "queued",
-        lastError: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(unipileAccount.id, data.id));
-  }
-
-  return getEmailDiscoveryQueue().add(`${data.provider}-scrape`, jobData);
+  return getEmailDiscoveryQueue().add("discover-mailbox", data);
 }
 
 export async function enqueueThreadClassificationJobs(organizationId: string, threadIds: string[]) {
@@ -129,17 +97,15 @@ export async function enqueueOrganizationClassificationJobs(organizationId: stri
 }
 
 export async function removeMailboxQueueJobs({
-  provider,
-  id,
+  mailboxId,
   threadIds,
 }: {
-  provider: EmailDiscoveryJobData["provider"];
-  id: string;
+  mailboxId: string;
   threadIds: string[];
 }) {
   const deletedThreadIds = new Set(threadIds);
   const discoveryJobsRemoved = await removeMatchingJobs(getEmailDiscoveryQueue(), (job) => {
-    return job.data.provider === provider && job.data.id === id;
+    return job.data.mailboxId === mailboxId;
   });
   const classificationJobsRemoved = await removeMatchingJobs(getEmailClassificationQueue(), (job) => {
     const jobThreadIds = classificationJobThreadIds(job.data);
@@ -198,10 +164,6 @@ function classificationJobThreadIds(data: EmailClassificationJobData) {
   }
 
   return data.threadId ? [data.threadId] : [];
-}
-
-function defaultDiscoveryPageBudget(provider: EmailDiscoveryJobData["provider"]) {
-  return provider === "nylas" ? env.NYLAS_SCRAPE_MAX_PAGES_PER_RUN : env.UNIPILE_SCRAPE_MAX_PAGES_PER_RUN;
 }
 
 function defaultJobOptions() {

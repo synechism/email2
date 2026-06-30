@@ -5,8 +5,8 @@ import { db } from "@/db/client";
 import { createId } from "@/db/ids";
 import { nylasGrant } from "@/db/schema";
 import { getRequestOrgContext } from "@/lib/auth-server";
+import { enqueueMailboxDiscovery } from "@/lib/email/service";
 import { getGrantProfile } from "@/lib/nylas/http";
-import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
 
 export const runtime = "nodejs";
 
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       })
       .returning({ id: nylasGrant.id });
 
-    const job = grant ? await enqueueEmailDiscoveryJob({ provider: "nylas", id: grant.id }) : null;
+    const job = grant ? await enqueueMailboxDiscovery({ mailboxId: grant.id, organizationId: context.org.id }) : null;
 
     return NextResponse.json({ grant, jobId: job?.id ?? null });
   } catch (error) {

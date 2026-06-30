@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { db } from "@/db/client";
 import { unipileAccount, unipileHostedAuthState } from "@/db/schema";
-import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
+import { enqueueMailboxDiscovery } from "@/lib/email/service";
 import { listUnipileAccounts } from "@/lib/unipile/http";
 import { upsertUnipileAccount } from "@/lib/unipile/scraper";
 import type { UnipileAccountProfile } from "@/lib/unipile/types";
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       .where(eq(unipileHostedAuthState.id, stateRow.id));
 
     if (account) {
-      await enqueueEmailDiscoveryJob({ provider: "unipile", id: account.id });
+      await enqueueMailboxDiscovery({ mailboxId: account.id, organizationId: stateRow.organizationId });
     }
 
     redirectUrl.searchParams.set("connected", "unipile");

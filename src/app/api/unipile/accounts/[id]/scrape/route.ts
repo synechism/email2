@@ -1,10 +1,7 @@
-import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
-import { db } from "@/db/client";
-import { unipileAccount } from "@/db/schema";
 import { getRequestOrgContext } from "@/lib/auth-server";
-import { enqueueEmailDiscoveryJob } from "@/lib/queues/email";
+import { enqueueMailboxDiscovery, MailboxNotFoundError } from "@/lib/email/service";
 
 export const runtime = "nodejs";
 
@@ -16,17 +13,14 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
   }
 
   const { id } = await context.params;
-  const [account] = await db
-    .select({ id: unipileAccount.id })
-    .from(unipileAccount)
-    .where(and(eq(unipileAccount.id, id), eq(unipileAccount.organizationId, requestContext.org.id)))
-    .limit(1);
+  try {
+    const job = await enqueueMailboxDiscovery({ mailboxId: id, organizationId: requestContext.org.id });
+    return NextResponse.json({ queued: true, jobId: job.id });
+  } catch (error) {
+    if (error instanceof MailboxNotFoundError) {
+      return NextResponse.json({ error: "Unipile account not found." }, { status: 404 });
+    }
 
-  if (!account) {
-    return NextResponse.json({ error: "Unipile account not found." }, { status: 404 });
+    throw error;
   }
-
-  const job = await enqueueEmailDiscoveryJob({ provider: "unipile", id: account.id });
-
-  return NextResponse.json({ queued: true, jobId: job.id });
 }
