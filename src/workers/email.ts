@@ -5,7 +5,6 @@ import { db } from "@/db/client";
 import { emailThread } from "@/db/schema";
 import { classifyTouchedThreads, refreshThreadRollups } from "@/lib/email/threads";
 import { env } from "@/lib/env";
-import { runNylasScrape } from "@/lib/nylas/scraper";
 import {
   EMAIL_CLASSIFICATION_QUEUE,
   EMAIL_DISCOVERY_QUEUE,
@@ -15,16 +14,21 @@ import {
   type EmailClassificationJobData,
   type EmailDiscoveryJobData,
 } from "@/lib/queues/email";
+import { runNylasScrape } from "@/lib/nylas/scraper";
+import { runUnipileScrape } from "@/lib/unipile/scraper";
 
 export function startEmailWorkers() {
   const discoveryWorker = new Worker<EmailDiscoveryJobData>(
     EMAIL_DISCOVERY_QUEUE,
     async (job) => {
       const maxPages = discoveryJobPageLimit(job.data);
-      const result = await runNylasScrape(job.data.id, { maxPages });
+      const result =
+        job.data.provider === "nylas"
+          ? await runNylasScrape(job.data.id, { maxPages })
+          : await runUnipileScrape(job.data.id, { maxPages });
 
       if (result.status !== "failed") {
-        const pagesRemaining = Math.max(0, (job.data.pagesRemaining ?? env.NYLAS_SCRAPE_MAX_PAGES_PER_RUN) - result.pagesProcessed);
+        const pagesRemaining = Math.max(0, (job.data.pagesRemaining ?? providerPageBudget(job.data.provider)) - result.pagesProcessed);
         const shouldContinue = Boolean(result.nextCursor && pagesRemaining > 0);
         const pendingThreadIds = shouldContinue ? [] : await getPendingThreadIds(job.data);
         const threadIds = [...new Set([...result.touchedThreadIds, ...pendingThreadIds])];
@@ -96,7 +100,14 @@ export function startEmailWorkers() {
 }
 
 function discoveryJobPageLimit(jobData: EmailDiscoveryJobData) {
-  return Math.min(env.EMAIL_DISCOVERY_JOB_PAGE_BATCH_SIZE, jobData.pagesRemaining ?? env.NYLAS_SCRAPE_MAX_PAGES_PER_RUN);
+  return Math.min(
+    env.EMAIL_DISCOVERY_JOB_PAGE_BATCH_SIZE,
+    jobData.pagesRemaining ?? providerPageBudget(jobData.provider),
+  );
+}
+
+function providerPageBudget(provider: EmailDiscoveryJobData["provider"]) {
+  return provider === "nylas" ? env.NYLAS_SCRAPE_MAX_PAGES_PER_RUN : env.UNIPILE_SCRAPE_MAX_PAGES_PER_RUN;
 }
 
 function getClassificationThreadIds(jobData: EmailClassificationJobData) {
@@ -111,7 +122,11 @@ async function getPendingThreadIds(jobData: EmailDiscoveryJobData) {
   const rows = await db
     .select({ id: emailThread.id })
     .from(emailThread)
-    .where(and(eq(emailThread.nylasGrantId, jobData.id), eq(emailThread.kind, "uncategorized")));
+    .where(
+      jobData.provider === "nylas"
+        ? and(eq(emailThread.nylasGrantId, jobData.id), eq(emailThread.kind, "uncategorized"))
+        : and(eq(emailThread.unipileAccountId, jobData.id), eq(emailThread.kind, "uncategorized")),
+    );
 
   return rows.map((row) => row.id);
 }

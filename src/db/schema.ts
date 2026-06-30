@@ -166,6 +166,27 @@ export const nylasOAuthState = pgTable(
   }),
 );
 
+export const unipileHostedAuthState = pgTable(
+  "unipile_hosted_auth_state",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organizationId")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    redirectUri: text("redirectUri").notNull(),
+    accountId: text("accountId"),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expiresAt", { withTimezone: true, mode: "date" }).notNull(),
+    usedAt: timestamp("usedAt", { withTimezone: true, mode: "date" }),
+  },
+  (table) => ({
+    expiresAtIdx: index("unipile_hosted_auth_state_expiresAt_idx").on(table.expiresAt),
+  }),
+);
+
 export const nylasGrant = pgTable(
   "nylas_grant",
   {
@@ -193,6 +214,34 @@ export const nylasGrant = pgTable(
   }),
 );
 
+export const unipileAccount = pgTable(
+  "unipile_account",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organizationId")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    connectedByUserId: text("connectedByUserId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accountId: text("accountId").notNull().unique(),
+    email: text("email"),
+    provider: text("provider"),
+    status: text("status").notNull().default("connected"),
+    scrapeStatus: text("scrapeStatus").notNull().default("idle"),
+    nextCursor: text("nextCursor"),
+    backfillCompletedAt: timestamp("backfillCompletedAt", { withTimezone: true, mode: "date" }),
+    lastScrapedAt: timestamp("lastScrapedAt", { withTimezone: true, mode: "date" }),
+    lastError: text("lastError"),
+    rawAccount: jsonb("rawAccount").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    organizationIdIdx: index("unipile_account_organizationId_idx").on(table.organizationId),
+  }),
+);
+
 export const scrapeRun = pgTable(
   "scrape_run",
   {
@@ -200,9 +249,8 @@ export const scrapeRun = pgTable(
     organizationId: text("organizationId")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    nylasGrantId: text("nylasGrantId")
-      .notNull()
-      .references(() => nylasGrant.id, { onDelete: "cascade" }),
+    nylasGrantId: text("nylasGrantId").references(() => nylasGrant.id, { onDelete: "cascade" }),
+    unipileAccountId: text("unipileAccountId").references(() => unipileAccount.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("running"),
     cursorStart: text("cursorStart"),
     cursorEnd: text("cursorEnd"),
@@ -216,6 +264,7 @@ export const scrapeRun = pgTable(
   },
   (table) => ({
     grantIdx: index("scrape_run_nylasGrantId_idx").on(table.nylasGrantId),
+    unipileAccountIdx: index("scrape_run_unipileAccountId_idx").on(table.unipileAccountId),
     orgStartedIdx: index("scrape_run_org_started_idx").on(table.organizationId, table.startedAt),
   }),
 );
@@ -227,9 +276,8 @@ export const emailThread = pgTable(
     organizationId: text("organizationId")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    nylasGrantId: text("nylasGrantId")
-      .notNull()
-      .references(() => nylasGrant.id, { onDelete: "cascade" }),
+    nylasGrantId: text("nylasGrantId").references(() => nylasGrant.id, { onDelete: "cascade" }),
+    unipileAccountId: text("unipileAccountId").references(() => unipileAccount.id, { onDelete: "cascade" }),
     nylasThreadId: text("nylasThreadId").notNull(),
     subject: text("subject"),
     participants: jsonb("participants").$type<Array<{ name?: string; email?: string }>>().notNull().default(sql`'[]'::jsonb`),
@@ -247,6 +295,10 @@ export const emailThread = pgTable(
   (table) => ({
     orgIdx: index("email_thread_organizationId_idx").on(table.organizationId),
     grantThreadUnique: uniqueIndex("email_thread_grant_thread_unique").on(table.nylasGrantId, table.nylasThreadId),
+    unipileThreadUnique: uniqueIndex("email_thread_unipile_account_thread_unique").on(
+      table.unipileAccountId,
+      table.nylasThreadId,
+    ),
     latestIdx: index("email_thread_latest_idx").on(table.organizationId, table.latestMessageAt),
   }),
 );
@@ -258,9 +310,8 @@ export const emailMessage = pgTable(
     organizationId: text("organizationId")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    nylasGrantId: text("nylasGrantId")
-      .notNull()
-      .references(() => nylasGrant.id, { onDelete: "cascade" }),
+    nylasGrantId: text("nylasGrantId").references(() => nylasGrant.id, { onDelete: "cascade" }),
+    unipileAccountId: text("unipileAccountId").references(() => unipileAccount.id, { onDelete: "cascade" }),
     threadId: text("threadId")
       .notNull()
       .references(() => emailThread.id, { onDelete: "cascade" }),
@@ -287,6 +338,10 @@ export const emailMessage = pgTable(
     orgIdx: index("email_message_organizationId_idx").on(table.organizationId),
     threadIdx: index("email_message_threadId_idx").on(table.threadId),
     grantMessageUnique: uniqueIndex("email_message_grant_message_unique").on(table.nylasGrantId, table.nylasMessageId),
+    unipileMessageUnique: uniqueIndex("email_message_unipile_account_message_unique").on(
+      table.unipileAccountId,
+      table.nylasMessageId,
+    ),
     receivedIdx: index("email_message_received_idx").on(table.organizationId, table.receivedAt),
   }),
 );
@@ -317,11 +372,13 @@ export const userRelations = relations(user, ({ many }) => ({
   accounts: many(account),
   memberships: many(member),
   grants: many(nylasGrant),
+  unipileAccounts: many(unipileAccount),
 }));
 
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
   grants: many(nylasGrant),
+  unipileAccounts: many(unipileAccount),
   threads: many(emailThread),
 }));
 
@@ -350,6 +407,20 @@ export const nylasGrantRelations = relations(nylasGrant, ({ one, many }) => ({
   scrapeRuns: many(scrapeRun),
 }));
 
+export const unipileAccountRelations = relations(unipileAccount, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [unipileAccount.organizationId],
+    references: [organization.id],
+  }),
+  connectedBy: one(user, {
+    fields: [unipileAccount.connectedByUserId],
+    references: [user.id],
+  }),
+  threads: many(emailThread),
+  messages: many(emailMessage),
+  scrapeRuns: many(scrapeRun),
+}));
+
 export const emailThreadRelations = relations(emailThread, ({ one, many }) => ({
   organization: one(organization, {
     fields: [emailThread.organizationId],
@@ -358,6 +429,10 @@ export const emailThreadRelations = relations(emailThread, ({ one, many }) => ({
   grant: one(nylasGrant, {
     fields: [emailThread.nylasGrantId],
     references: [nylasGrant.id],
+  }),
+  unipileAccount: one(unipileAccount, {
+    fields: [emailThread.unipileAccountId],
+    references: [unipileAccount.id],
   }),
   messages: many(emailMessage),
   judgments: many(threadJudgment),
@@ -371,6 +446,10 @@ export const emailMessageRelations = relations(emailMessage, ({ one }) => ({
   grant: one(nylasGrant, {
     fields: [emailMessage.nylasGrantId],
     references: [nylasGrant.id],
+  }),
+  unipileAccount: one(unipileAccount, {
+    fields: [emailMessage.unipileAccountId],
+    references: [unipileAccount.id],
   }),
   thread: one(emailThread, {
     fields: [emailMessage.threadId],

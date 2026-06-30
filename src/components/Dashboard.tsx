@@ -30,6 +30,7 @@ type DashboardData = {
   };
   grants: Array<{
     id: string;
+    source: "nylas" | "unipile";
     grantId: string;
     email: string | null;
     provider: string | null;
@@ -87,7 +88,9 @@ export function Dashboard({
   const [data, setData] = useState(initialData);
   const [grantId, setGrantId] = useState("");
   const [grantEmail, setGrantEmail] = useState("");
+  const [unipileAccountId, setUnipileAccountId] = useState("");
   const [manualPending, setManualPending] = useState(false);
+  const [unipileManualPending, setUnipileManualPending] = useState(false);
   const [reclassifyPending, setReclassifyPending] = useState(false);
   const [deletingGrantId, setDeletingGrantId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -152,7 +155,7 @@ export function Dashboard({
     }
   }
 
-  async function runScrape(id: string) {
+  async function runScrape(id: string, source: "nylas" | "unipile") {
     setError(null);
     setData((current) => ({
       ...current,
@@ -160,7 +163,8 @@ export function Dashboard({
     }));
 
     try {
-      const response = await fetch(`/api/nylas/grants/${id}/scrape`, { method: "POST" });
+      const path = source === "nylas" ? `/api/nylas/grants/${id}/scrape` : `/api/unipile/accounts/${id}/scrape`;
+      const response = await fetch(path, { method: "POST" });
       const payload = (await response.json()) as { error?: string };
 
       if (!response.ok) {
@@ -170,6 +174,32 @@ export function Dashboard({
       setError(caught instanceof Error ? caught.message : "Scrape failed.");
     } finally {
       await refreshDashboard();
+    }
+  }
+
+  async function addManualUnipileAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setUnipileManualPending(true);
+
+    try {
+      const response = await fetch("/api/unipile/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: unipileAccountId }),
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to add Unipile account.");
+      }
+
+      setUnipileAccountId("");
+      await refreshDashboard();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to add Unipile account.");
+    } finally {
+      setUnipileManualPending(false);
     }
   }
 
@@ -207,7 +237,9 @@ export function Dashboard({
     setDeletingGrantId(grant.id);
 
     try {
-      const response = await fetch(`/api/nylas/grants/${grant.id}`, { method: "DELETE" });
+      const path =
+        grant.source === "nylas" ? `/api/nylas/grants/${grant.id}` : `/api/unipile/accounts/${grant.id}`;
+      const response = await fetch(path, { method: "DELETE" });
       const payload = (await response.json()) as {
         error?: string;
         messagesDeleted?: number;
@@ -294,6 +326,10 @@ export function Dashboard({
             <LinkIcon size={16} />
             Connect with Nylas
           </a>
+          <a className="primary-button" href="/api/unipile/connect">
+            <LinkIcon size={16} />
+            Connect with Unipile
+          </a>
         </div>
       </section>
 
@@ -316,6 +352,16 @@ export function Dashboard({
               {manualPending ? "Queueing" : "Add and queue"}
             </button>
           </form>
+          <form className="compact-form split-form" onSubmit={addManualUnipileAccount}>
+            <label>
+              Unipile account ID
+              <input value={unipileAccountId} onChange={(event) => setUnipileAccountId(event.target.value)} required />
+            </label>
+            <button className="secondary-button" type="submit" disabled={unipileManualPending}>
+              <Play size={15} />
+              {unipileManualPending ? "Queueing" : "Add Unipile"}
+            </button>
+          </form>
         </section>
 
         <section className="panel grants-panel">
@@ -333,7 +379,9 @@ export function Dashboard({
                   <div className="grant-main">
                     <div className="grant-title">
                       <strong>{grant.email ?? grant.grantId}</strong>
-                      <span>{grant.provider ?? "provider unknown"}</span>
+                      <span>
+                        {labelSource(grant.source)} / {grant.provider ?? "provider unknown"}
+                      </span>
                     </div>
                     <div className="run-meta">
                       <span>{grant.scrapeStatus}</span>
@@ -359,7 +407,7 @@ export function Dashboard({
                     <button
                       className="icon-button"
                       type="button"
-                      onClick={() => runScrape(grant.id)}
+                      onClick={() => runScrape(grant.id, grant.source)}
                       disabled={["queued", "running"].includes(grant.scrapeStatus) || deletingGrantId === grant.id}
                       title="Run scrape batch"
                     >
@@ -493,6 +541,10 @@ function labelKind(kind: string) {
     .split("_")
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function labelSource(source: "nylas" | "unipile") {
+  return source === "nylas" ? "Nylas" : "Unipile";
 }
 
 function formatDate(value: string) {

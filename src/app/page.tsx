@@ -23,7 +23,12 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
   const data = JSON.parse(JSON.stringify(await getDashboardData(org.id)));
   const connected = typeof params.connected === "string" ? params.connected : null;
   const error = typeof params.error === "string" ? params.error : null;
-  const flash = connected === "nylas" ? "Nylas grant connected. Scrape queued in the background." : null;
+  const flash =
+    connected === "nylas"
+      ? "Nylas grant connected. Scrape queued in the background."
+      : connected === "unipile"
+        ? "Unipile account connected. Scrape queued in the background."
+        : null;
 
   return (
     <Dashboard

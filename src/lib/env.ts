@@ -13,6 +13,17 @@ const envSchema = z.object({
   NYLAS_SCRAPE_PAGE_SIZE: z.coerce.number().int().positive().max(200).default(50),
   NYLAS_SCRAPE_MAX_PAGES_PER_RUN: z.coerce.number().int().positive().max(100).default(20),
   NYLAS_SCRAPE_REQUEST_DELAY_MS: z.coerce.number().int().min(0).max(10_000).default(250),
+  UNIPILE_BASE_URL: z.string().url().optional(),
+  UNIPILE_ACCESS_TOKEN: z.string().min(1).optional(),
+  UNIPILE_HOSTED_AUTH_PROVIDERS: z.string().min(1).default("*:MAILING"),
+  UNIPILE_AUTH_SUCCESS_REDIRECT_URI: z.string().url().default("http://localhost:3000/api/unipile/callback"),
+  UNIPILE_AUTH_FAILURE_REDIRECT_URI: z.string().url().default("http://localhost:3000/?error=unipile-auth-failed"),
+  UNIPILE_AUTH_NOTIFY_URI: z.string().url().default("http://localhost:3000/api/unipile/notify"),
+  UNIPILE_GOOGLE_SCOPES: z.string().optional(),
+  UNIPILE_MICROSOFT_SCOPES: z.string().optional(),
+  UNIPILE_SCRAPE_PAGE_SIZE: z.coerce.number().int().positive().max(250).default(100),
+  UNIPILE_SCRAPE_MAX_PAGES_PER_RUN: z.coerce.number().int().positive().max(100).default(10),
+  UNIPILE_SCRAPE_REQUEST_DELAY_MS: z.coerce.number().int().min(0).max(10_000).default(250),
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
   EMAIL_DISCOVERY_WORKER_CONCURRENCY: z.coerce.number().int().positive().max(10).default(2),
   EMAIL_DISCOVERY_JOB_PAGE_BATCH_SIZE: z.coerce.number().int().positive().max(20).default(1),
@@ -45,5 +56,16 @@ export function requireNylasEnv() {
     clientId: env.NYLAS_CLIENT_ID,
     apiUri: env.NYLAS_API_URI.replace(/\/$/, ""),
     redirectUri: env.NYLAS_REDIRECT_URI,
+  };
+}
+
+export function requireUnipileEnv() {
+  if (!env.UNIPILE_BASE_URL || !env.UNIPILE_ACCESS_TOKEN) {
+    throw new Error("UNIPILE_BASE_URL and UNIPILE_ACCESS_TOKEN are required for Unipile hosted auth and scraping.");
+  }
+
+  return {
+    baseUrl: env.UNIPILE_BASE_URL.replace(/\/$/, ""),
+    accessToken: env.UNIPILE_ACCESS_TOKEN,
   };
 }

@@ -1,7 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { emailMessage, emailThread, nylasGrant, scrapeRun } from "@/db/schema";
+import { emailMessage, emailThread, nylasGrant, scrapeRun, unipileAccount } from "@/db/schema";
 import { getEmailQueueCountsSafe } from "@/lib/queues/email";
 
 export async function getDashboardData(organizationId: string) {
@@ -25,9 +25,10 @@ export async function getDashboardData(organizationId: string) {
     .groupBy(emailThread.kind)
     .orderBy(desc(sql<number>`count(*)::int`));
 
-  const grants = await db
+  const nylasGrants = await db
     .select({
       id: nylasGrant.id,
+      source: sql<"nylas">`'nylas'`,
       grantId: nylasGrant.grantId,
       email: nylasGrant.email,
       provider: nylasGrant.provider,
@@ -43,8 +44,29 @@ export async function getDashboardData(organizationId: string) {
     .where(eq(nylasGrant.organizationId, organizationId))
     .orderBy(desc(nylasGrant.createdAt));
 
+  const unipileAccounts = await db
+    .select({
+      id: unipileAccount.id,
+      source: sql<"unipile">`'unipile'`,
+      grantId: unipileAccount.accountId,
+      email: unipileAccount.email,
+      provider: unipileAccount.provider,
+      status: unipileAccount.status,
+      scrapeStatus: unipileAccount.scrapeStatus,
+      nextCursor: unipileAccount.nextCursor,
+      backfillCompletedAt: unipileAccount.backfillCompletedAt,
+      lastScrapedAt: unipileAccount.lastScrapedAt,
+      lastError: unipileAccount.lastError,
+      createdAt: unipileAccount.createdAt,
+    })
+    .from(unipileAccount)
+    .where(eq(unipileAccount.organizationId, organizationId))
+    .orderBy(desc(unipileAccount.createdAt));
+
+  const mailboxes = [...nylasGrants, ...unipileAccounts].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
   const grantsWithRuns = await Promise.all(
-    grants.map(async (grant) => {
+    mailboxes.map(async (grant) => {
       const [latestRun] = await db
         .select({
           id: scrapeRun.id,
@@ -58,7 +80,7 @@ export async function getDashboardData(organizationId: string) {
           finishedAt: scrapeRun.finishedAt,
         })
         .from(scrapeRun)
-        .where(eq(scrapeRun.nylasGrantId, grant.id))
+        .where(grant.source === "nylas" ? eq(scrapeRun.nylasGrantId, grant.id) : eq(scrapeRun.unipileAccountId, grant.id))
         .orderBy(desc(scrapeRun.startedAt))
         .limit(1);
 

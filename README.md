@@ -1,6 +1,6 @@
 # Email Thread Scraper
 
-Next.js app for connecting Nylas grants, scraping mailbox messages into Postgres, grouping by Nylas thread ID, and classifying email threads with model-backed BullMQ workers.
+Next.js app for connecting Nylas grants and Unipile accounts, scraping mailbox messages into Postgres, grouping by provider thread ID, and classifying email threads with a model-backed worker.
 
 ## Setup
 
@@ -10,13 +10,14 @@ Next.js app for connecting Nylas grants, scraping mailbox messages into Postgres
    docker compose up -d
    ```
 
-2. Install dependencies:
+2. Create `.env.local` from `.env.example` and fill in:
 
-   ```bash
-   npm install
-   ```
+   - `NYLAS_API_KEY`
+   - `NYLAS_CLIENT_ID`
+   - `NYLAS_REDIRECT_URI`
+   - `BETTER_AUTH_SECRET`
 
-3. Copy `.env.example` to `.env.local`, fill in credentials, and run migrations:
+3. Apply the schema:
 
    ```bash
    npm run db:migrate
@@ -40,15 +41,14 @@ The current algorithm:
 
 - Request only selected fields: IDs, thread IDs, recipients, subject, snippet, timestamps, folder IDs, flags, and attachment metadata.
 - Use `limit`, `page_token`, and `next_cursor` for resumable pagination.
-- Persist `nextCursor` on the grant after every page so a failed scrape resumes from the last completed page.
-- Bound each discovery budget with `NYLAS_SCRAPE_MAX_PAGES_PER_RUN`.
-- Split discovery into small BullMQ jobs with `EMAIL_DISCOVERY_JOB_PAGE_BATCH_SIZE`, so classification can overlap with later discovery pages.
+- Persist `nextCursor` on the grant/account after every page so a failed scrape resumes from the last completed page.
+- Bound each discovery job with `NYLAS_SCRAPE_MAX_PAGES_PER_RUN` or `UNIPILE_SCRAPE_MAX_PAGES_PER_RUN`.
 - Respect `Retry-After` and retry 429/502/503/504 responses with exponential backoff.
 - Upsert messages by `(nylasGrantId, nylasMessageId)`.
 - Upsert threads by `(nylasGrantId, nylasThreadId)`.
 - Recompute thread rollups from persisted messages instead of incrementing counters blindly.
 - Enqueue discovery through BullMQ's `email-discovery` queue.
-- Enqueue model classification through BullMQ's `email-classification` queue in thread batches.
-- The Next.js app only creates OAuth/grant records and enqueues work. `npm run worker` performs the slow scraping and classification process.
+- Enqueue model classification through BullMQ's `email-classification` queue, one job per touched thread.
+- The Next.js app only creates OAuth/account records and enqueues work. `npm run worker` performs the slow scraping and classification process.
 
 Classification uses the configured model provider and falls back locally if model providers fail. The app sends only selected metadata/snippets, sets `store: false` for Responses providers, and treats email content as untrusted data.
