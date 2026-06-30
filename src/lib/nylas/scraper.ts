@@ -1,10 +1,10 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { createId } from "@/db/ids";
 import { emailMessage, emailThread, nylasGrant, scrapeRun, threadJudgment } from "@/db/schema";
 import { env } from "@/lib/env";
-import { classifyThread } from "@/lib/nylas/classifier";
+import { classifyThreads, type ClassificationInput } from "@/lib/nylas/classifier";
 import { listGrantMessages } from "@/lib/nylas/http";
 import type { EmailName, NylasSelectedMessage } from "@/lib/nylas/types";
 
@@ -340,17 +340,9 @@ async function refreshThreadRollups(threadIds: string[]) {
   }
 
   for (const threadId of threadIds) {
-    const [stats] = await db
+    const messages = await db
       .select({
-        messageCount: sql<number>`count(*)::int`,
-        earliestMessageAt: sql<Date | null>`min(${emailMessage.receivedAt})`,
-        latestMessageAt: sql<Date | null>`max(${emailMessage.receivedAt})`,
-      })
-      .from(emailMessage)
-      .where(eq(emailMessage.threadId, threadId));
-
-    const [latest] = await db
-      .select({
+        receivedAt: emailMessage.receivedAt,
         subject: emailMessage.subject,
         snippet: emailMessage.snippet,
         from: emailMessage.from,
@@ -360,15 +352,19 @@ async function refreshThreadRollups(threadIds: string[]) {
       })
       .from(emailMessage)
       .where(eq(emailMessage.threadId, threadId))
-      .orderBy(desc(emailMessage.receivedAt))
-      .limit(1);
+      .orderBy(desc(emailMessage.receivedAt));
+
+    const latest = messages[0];
+    const datedMessages = messages.filter((message) => message.receivedAt instanceof Date);
+    const earliestMessageAt = datedMessages.at(-1)?.receivedAt ?? null;
+    const latestMessageAt = datedMessages[0]?.receivedAt ?? null;
 
     await db
       .update(emailThread)
       .set({
-        messageCount: stats?.messageCount ?? 0,
-        earliestMessageAt: stats?.earliestMessageAt ?? null,
-        latestMessageAt: stats?.latestMessageAt ?? null,
+        messageCount: messages.length,
+        earliestMessageAt,
+        latestMessageAt,
         subject: latest?.subject ?? null,
         latestSnippet: latest?.snippet ?? null,
         participants: latest ? uniquePeople([...latest.from, ...latest.to, ...latest.cc, ...latest.bcc]) : [],
@@ -384,6 +380,7 @@ async function classifyTouchedThreads(threadIds: string[], organizationId: strin
   }
 
   const threads = await db.select().from(emailThread).where(inArray(emailThread.id, threadIds));
+  const inputs: ClassificationInput[] = [];
 
   for (const thread of threads) {
     const samples = await db
@@ -396,21 +393,32 @@ async function classifyTouchedThreads(threadIds: string[], organizationId: strin
       .orderBy(desc(emailMessage.receivedAt))
       .limit(8);
 
-    const classification = classifyThread({
+    inputs.push({
+      threadId: thread.id,
       subject: thread.subject,
       latestSnippet: thread.latestSnippet,
       participants: thread.participants,
+      messageCount: thread.messageCount,
       samples,
     });
+  }
+
+  const classifications = await classifyThreads(inputs);
+
+  for (const classification of classifications) {
+    if (!classification.threadId) {
+      continue;
+    }
 
     await db.transaction(async (tx) => {
       await tx.insert(threadJudgment).values({
         id: createId("jdg"),
         organizationId,
-        threadId: thread.id,
+        threadId: classification.threadId!,
         kind: classification.kind,
         confidence: classification.confidence,
         reason: classification.reason,
+        strategy: classification.strategy,
       });
 
       await tx
@@ -422,9 +430,51 @@ async function classifyTouchedThreads(threadIds: string[], organizationId: strin
           judgedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(and(eq(emailThread.id, thread.id), eq(emailThread.organizationId, organizationId)));
+        .where(and(eq(emailThread.id, classification.threadId!), eq(emailThread.organizationId, organizationId)));
     });
   }
+}
+
+export async function repairGrantRollupsAndClassifications(nylasGrantDbId: string) {
+  const [grant] = await db.select().from(nylasGrant).where(eq(nylasGrant.id, nylasGrantDbId)).limit(1);
+
+  if (!grant) {
+    throw new Error("Nylas grant was not found.");
+  }
+
+  const threadRows = await db
+    .select({ id: emailThread.id })
+    .from(emailThread)
+    .where(eq(emailThread.nylasGrantId, grant.id));
+  const threadIds = threadRows.map((thread) => thread.id);
+
+  await refreshThreadRollups(threadIds);
+  await classifyTouchedThreads(threadIds, grant.organizationId);
+
+  await db
+    .update(nylasGrant)
+    .set({
+      scrapeStatus: grant.backfillCompletedAt ? "completed" : "idle",
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(nylasGrant.id, grant.id));
+
+  return {
+    threadsRepaired: threadIds.length,
+  };
+}
+
+export async function reclassifyOrganizationThreads(organizationId: string) {
+  const threadRows = await db.select({ id: emailThread.id }).from(emailThread).where(eq(emailThread.organizationId, organizationId));
+  const threadIds = threadRows.map((thread) => thread.id);
+
+  await refreshThreadRollups(threadIds);
+  await classifyTouchedThreads(threadIds, organizationId);
+
+  return {
+    threadsClassified: threadIds.length,
+  };
 }
 
 function uniquePeople(people: EmailName[]) {

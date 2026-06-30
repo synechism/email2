@@ -13,6 +13,19 @@ const envSchema = z.object({
   NYLAS_SCRAPE_PAGE_SIZE: z.coerce.number().int().positive().max(200).default(50),
   NYLAS_SCRAPE_MAX_PAGES_PER_RUN: z.coerce.number().int().positive().max(100).default(20),
   NYLAS_SCRAPE_REQUEST_DELAY_MS: z.coerce.number().int().min(0).max(10_000).default(250),
+  AZURE_API_KEY: z.string().min(1).optional(),
+  AZURE_OPENAI_BASE_URL: z.string().url().default("https://cronwell-codex-2.openai.azure.com/openai/v1"),
+  AZURE_OPENAI_MODEL: z.string().min(1).default("gpt-5.5"),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_MODEL: z.string().min(1).default("gpt-4.1-mini"),
+  OPENAI_CLASSIFY_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(20),
+  MODEL_REASONING_EFFORT: z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).default("low"),
+  MODEL_TEXT_VERBOSITY: z.enum(["low", "medium", "high"]).default("low"),
+  MODEL_CLASSIFY_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(16_000).default(3000),
+  MODEL_CLASSIFY_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(60_000),
+  ANTHROPIC_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
+  ANTHROPIC_AUTH_TOKEN: z.string().min(1).optional(),
+  ANTHROPIC_MODEL: z.string().min(1).default("deepseek-v4-pro[1m]"),
 });
 
 export const env = envSchema.parse(process.env);

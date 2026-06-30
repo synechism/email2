@@ -11,11 +11,12 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-const createdAt = timestamp("createdAt", { withTimezone: true, mode: "date" }).notNull().defaultNow();
-const updatedAt = timestamp("updatedAt", { withTimezone: true, mode: "date" })
-  .notNull()
-  .defaultNow()
-  .$onUpdate(() => new Date());
+const createdAt = () => timestamp("createdAt", { withTimezone: true, mode: "date" }).notNull().defaultNow();
+const updatedAt = () =>
+  timestamp("updatedAt", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date());
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -23,8 +24,8 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("emailVerified").notNull().default(false),
   image: text("image"),
-  createdAt,
-  updatedAt,
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const session = pgTable(
@@ -33,8 +34,8 @@ export const session = pgTable(
     id: text("id").primaryKey(),
     expiresAt: timestamp("expiresAt", { withTimezone: true, mode: "date" }).notNull(),
     token: text("token").notNull().unique(),
-    createdAt,
-    updatedAt,
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
     ipAddress: text("ipAddress"),
     userAgent: text("userAgent"),
     userId: text("userId")
@@ -63,8 +64,8 @@ export const account = pgTable(
     refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt", { withTimezone: true, mode: "date" }),
     scope: text("scope"),
     password: text("password"),
-    createdAt,
-    updatedAt,
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => ({
     userIdIdx: index("account_userId_idx").on(table.userId),
@@ -78,8 +79,8 @@ export const verification = pgTable(
     identifier: text("identifier").notNull(),
     value: text("value").notNull(),
     expiresAt: timestamp("expiresAt", { withTimezone: true, mode: "date" }).notNull(),
-    createdAt,
-    updatedAt,
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => ({
     identifierIdx: index("verification_identifier_idx").on(table.identifier),
@@ -94,8 +95,8 @@ export const organization = pgTable(
     slug: text("slug").notNull().unique(),
     logo: text("logo"),
     metadata: text("metadata"),
-    createdAt,
-    updatedAt,
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => ({
     slugIdx: index("organization_slug_idx").on(table.slug),
@@ -113,7 +114,7 @@ export const member = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("member"),
-    createdAt,
+    createdAt: createdAt(),
   },
   (table) => ({
     organizationIdIdx: index("member_organizationId_idx").on(table.organizationId),
@@ -133,7 +134,7 @@ export const invitation = pgTable(
     role: text("role"),
     status: text("status").notNull().default("pending"),
     expiresAt: timestamp("expiresAt", { withTimezone: true, mode: "date" }).notNull(),
-    createdAt,
+    createdAt: createdAt(),
     inviterId: text("inviterId")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -156,7 +157,7 @@ export const nylasOAuthState = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     provider: text("provider"),
     redirectUri: text("redirectUri").notNull(),
-    createdAt,
+    createdAt: createdAt(),
     expiresAt: timestamp("expiresAt", { withTimezone: true, mode: "date" }).notNull(),
     usedAt: timestamp("usedAt", { withTimezone: true, mode: "date" }),
   },
@@ -184,12 +185,11 @@ export const nylasGrant = pgTable(
     backfillCompletedAt: timestamp("backfillCompletedAt", { withTimezone: true, mode: "date" }),
     lastScrapedAt: timestamp("lastScrapedAt", { withTimezone: true, mode: "date" }),
     lastError: text("lastError"),
-    createdAt,
-    updatedAt,
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => ({
     organizationIdIdx: index("nylas_grant_organizationId_idx").on(table.organizationId),
-    grantIdIdx: uniqueIndex("nylas_grant_grantId_unique").on(table.grantId),
   }),
 );
 
@@ -241,8 +241,8 @@ export const emailThread = pgTable(
     kindConfidence: real("kindConfidence").notNull().default(0),
     kindReason: text("kindReason"),
     judgedAt: timestamp("judgedAt", { withTimezone: true, mode: "date" }),
-    createdAt,
-    updatedAt,
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => ({
     orgIdx: index("email_thread_organizationId_idx").on(table.organizationId),
@@ -280,8 +280,8 @@ export const emailMessage = pgTable(
     starred: boolean("starred"),
     receivedAt: timestamp("receivedAt", { withTimezone: true, mode: "date" }),
     selectedPayload: jsonb("selectedPayload").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
-    createdAt,
-    updatedAt,
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => ({
     orgIdx: index("email_message_organizationId_idx").on(table.organizationId),
@@ -305,7 +305,7 @@ export const threadJudgment = pgTable(
     confidence: real("confidence").notNull().default(0),
     reason: text("reason"),
     strategy: text("strategy").notNull().default("local-keyword-v1"),
-    createdAt,
+    createdAt: createdAt(),
   },
   (table) => ({
     threadIdx: index("thread_judgment_threadId_idx").on(table.threadId),
