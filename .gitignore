@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+.next/
+node_modules/
+drizzle/
+*.tsbuildinfo
+.DS_Store
+coverage/

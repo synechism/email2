@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "nylas-api": {
+      "source": "nylas/skills",
+      "sourceType": "github",
+      "skillPath": "skills/nylas-api/SKILL.md",
+      "computedHash": "32cefe7675731f1c499f3a31e3309e372ea10e6bf864c9895dcf8274f6c5c851"
+    },
+    "nylas-cli": {
+      "source": "nylas/skills",
+      "sourceType": "github",
+      "skillPath": "skills/nylas-cli/SKILL.md",
+      "computedHash": "f68c8e4a58429d8580aa47ed8a57c0e2647d1fde0731ce453c38c634cfc5369d"
+    }
+  }
+}
